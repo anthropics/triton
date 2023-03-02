@@ -698,6 +698,91 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
     if (numStages <= 1)
       return;
 
+    // getOperation()->dump();
+    if (numStages == 1) {
+      // combine ldg & sts
+      getOperation()->walk([&](triton::LoadOp loadOp) {
+        // 
+        if (loadOp.getResult().hasOneUse()) {
+          Operation *use = *loadOp.getResult().getUsers().begin();
+
+          // advance to the first conversion as long
+          // as the use resides in shared memory and it has
+          // a single use itself
+          while (use) {
+            if (use->getNumResults() != 1 || !use->getResult(0).hasOneUse())
+              break;
+            auto tensorType =
+                use->getResult(0).getType().dyn_cast<RankedTensorType>();
+            if (!tensorType.getEncoding().isa<ttg::SharedEncodingAttr>())
+              break;
+            use = *use->getResult(0).getUsers().begin();
+          }
+
+          if (auto convertLayout = llvm::dyn_cast<ttg::ConvertLayoutOp>(use)) {
+            if (auto tensorType = convertLayout.getResult()
+                          .getType()
+                          .dyn_cast<RankedTensorType>()) {
+              if (auto dotOpEnc = tensorType.getEncoding()
+                                      .dyn_cast<ttg::DotOperandEncodingAttr>()) {
+                OpBuilder builder(loadOp);
+
+                // allocateEmptyBuffer
+                auto ty = loadOp.getType().cast<RankedTensorType>();
+                SmallVector<int64_t> bufferShape(ty.getShape().begin(),
+                                                ty.getShape().end());
+                bufferShape.insert(bufferShape.begin(), 1);
+                auto sharedEnc = ttg::SharedEncodingAttr::get(
+                  ty.getContext(), dotOpEnc, ty.getShape(),
+                  triton::gpu::getOrder(ty.getEncoding()), ty.getElementType());
+                auto bufferTy = RankedTensorType::get(
+                  bufferShape,
+                  ty.getElementType(),
+                  sharedEnc
+                );
+                auto allocTensorOp = builder.create<ttg::AllocTensorOp>(use->getLoc(), bufferTy);
+                auto insertAsyncOp = builder.create<triton::gpu::InsertSliceAsyncOp>(
+                  loadOp.getLoc(),
+                  allocTensorOp.getType(),
+                  loadOp.getPtr(),
+                  allocTensorOp,
+                  builder.create<arith::ConstantIntOp>(loadOp.getLoc(), 0, 32),
+                  loadOp.getMask(),
+                  loadOp.getOther(),
+                  loadOp.getCache(),
+                  loadOp.getEvict(),
+                  loadOp.getIsVolatile(), /*axis*/ 0);
+                builder.create<triton::gpu::AsyncCommitGroupOp>(loadOp.getLoc());
+                builder.create<ttg::AsyncWaitOp>(loadOp.getLoc(), 0);
+
+                auto sliceType = RankedTensorType::get({bufferShape[1], bufferShape[2]},
+                                      ty.getElementType(),
+                                      sharedEnc);
+                auto extractSlices = builder.create<triton::gpu::ExtractSliceOp>(
+                  loadOp.getLoc(), sliceType, insertAsyncOp,
+                  SmallVector<OpFoldResult>{int_attr(0), int_attr(0), int_attr(0)},
+                  SmallVector<OpFoldResult>{int_attr(1),
+                                            int_attr(sliceType.getShape()[0]),
+                                            int_attr(sliceType.getShape()[1])},
+                  SmallVector<OpFoldResult>{int_attr(1), int_attr(1), int_attr(1)});
+
+                {
+                use->replaceAllUsesWith(
+                  builder.create<ttg::ConvertLayoutOp>(
+                    loadOp.getLoc(),
+                    tensorType,
+                    extractSlices
+                  )
+                );
+                }
+
+            }}
+          }
+        }
+      });
+      return;
+    }
+
     getOperation()->walk([&](scf::ForOp forOp) -> void {
       LoopPipeliner pipeliner(forOp, numStages);
 
