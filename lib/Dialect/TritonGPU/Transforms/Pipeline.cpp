@@ -698,10 +698,9 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
     if (numStages < 1)
       return;
 
-    // getOperation()->dump();
     if (numStages == 1) {
       // combine ldg & sts
-      bool visited = false;
+      bool visited = true;
       getOperation()->walk([&](triton::LoadOp loadOp) {
         // 
         if (loadOp.getResult().hasOneUse()) {
