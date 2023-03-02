@@ -760,7 +760,7 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
                 auto sliceType = RankedTensorType::get({bufferShape[1], bufferShape[2]},
                                       ty.getElementType(),
                                       sharedEnc);
-                auto extractSlices = builder.create<triton::gpu::ExtractSliceOp>(
+                auto extractSlices = builder.create<mlir::tensor::ExtractSliceOp>(
                   loadOp.getLoc(), sliceType, insertAsyncOp,
                   SmallVector<OpFoldResult>{int_attr(0), int_attr(0), int_attr(0)},
                   SmallVector<OpFoldResult>{int_attr(1),
