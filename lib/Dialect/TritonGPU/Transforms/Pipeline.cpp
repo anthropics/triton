@@ -695,12 +695,13 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
   void runOnOperation() override {
     int numStages = this->numStages;
 
-    if (numStages <= 1)
+    if (numStages < 1)
       return;
 
     // getOperation()->dump();
     if (numStages == 1) {
       // combine ldg & sts
+      bool visited = false;
       getOperation()->walk([&](triton::LoadOp loadOp) {
         // 
         if (loadOp.getResult().hasOneUse()) {
@@ -753,7 +754,9 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
                   loadOp.getEvict(),
                   loadOp.getIsVolatile(), /*axis*/ 0);
                 builder.create<triton::gpu::AsyncCommitGroupOp>(loadOp.getLoc());
-                builder.create<ttg::AsyncWaitOp>(loadOp.getLoc(), 0);
+
+                if (visited)
+                  builder.create<ttg::AsyncWaitOp>(loadOp.getLoc(), 0);
 
                 auto sliceType = RankedTensorType::get({bufferShape[1], bufferShape[2]},
                                       ty.getElementType(),
@@ -774,6 +777,8 @@ struct PipelinePass : public TritonGPUPipelineBase<PipelinePass> {
                     extractSlices
                   )
                 );
+                  visited = true;
+
                 }
 
             }}
