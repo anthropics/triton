@@ -801,6 +801,7 @@ void populateElementwiseOpToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 #define POPULATE_TERNARY_OP(SRC_OP, DST_OP)                                    \
   patterns.add<ElementwiseOpConversion<SRC_OP, DST_OP>>(typeConverter, benefit);
   POPULATE_TERNARY_OP(triton::gpu::SelectOp, LLVM::SelectOp)
+  POPULATE_TERNARY_OP(arith::SelectOp, LLVM::SelectOp)
 #undef POPULATE_TERNARY_OP
 
 #define POPULATE_BINARY_OP(SRC_OP, DST_OP)                                     \
