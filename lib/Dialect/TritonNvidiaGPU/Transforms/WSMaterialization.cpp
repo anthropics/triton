@@ -463,7 +463,7 @@ void mutexSyncPingPang(Operation *parentOp, int numAgents, int &nameBarrierId,
   globalNumRoles += numRoles;
   Value roleId;
   parentOp->walk([&](ttng::GetMutexRoleIdOp getMutexRoleIdOp) {
-    // GetMutexRoleIdOp only occures once.
+    // GetMutexRoleIdOp only occurres once.
     assert(times == 0);
     OpBuilder builder(getMutexRoleIdOp);
     numRoles = getMutexRoleIdOp.getNum();
